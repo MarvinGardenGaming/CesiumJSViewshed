@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- Include the CesiumJS JavaScript and CSS files -->
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Cesium.js"></script>
+  <script src="./jquery-3.6.0.min.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+  <style>
+
+    body{
+      margin: 0;
+    }
+
+    .cesium-viewer{
+      width: 100vw !important;
+      height: 100vh !important;
+    }
+
+    .cesium-sceneModePicker-button3D{
+      display: none;
+    }
+
+    .cesium-viewer-infoBoxContainer{
+      display: none !important;
+    }
+
+    .cesium-credit-textContainer{
+      display: none !important;
+    }
+
+    #popupDiv{
+      visibility: visible;
+      background-color: #303336;
+      opacity: 1;
+      right: 20%;
+    }
+
+    #dropdownContainer{
+      background-color: #303336;
+      padding: 6.5px;
+      color: white;
+      border-radius: 4px;
+      top: 5px;
+      left: 5px;
+      position: absolute;
+    }
+
+    #angleSliderContainer{
+      background-color: #303336;
+      padding: 6.5px;
+      color: white;
+      border-radius: 4px;
+      position: absolute;
+      top: 5px;
+      right: 45%;
+    }
+
+
+  </style>
+</head>
+<body>
+  <div id="cesiumContainer"></div>
+  <script>
+
+    var dropdown = undefined;
+
+    
+    var slider = undefined;
+
+    var currentEarthPosition = undefined;
+
+    // Wait for document to load
+    window.onload = function(){ 
+      // Remove unnecassary elements
+      const scenePickerElements = document.getElementsByClassName("cesium-sceneModePicker-wrapper cesium-toolbar-button");
+      while(scenePickerElements.length > 0){
+        scenePickerElements[0].parentNode.removeChild(scenePickerElements[0]);
+      }
+
+      const homeElements = document.getElementsByClassName("cesium-button cesium-toolbar-button cesium-home-button");
+      while(homeElements.length > 0){
+        homeElements[0].parentNode.removeChild(homeElements[0]);
+      }
+
+      const viewer  = document.getElementsByClassName("cesium-viewer");
+
+      // Create dropdown
+      var dropdownContainer = document.createElement('div');
+      dropdownContainer.setAttribute("id", "dropdownContainer");
+      dropdownContainer.innerHTML = '<label >Choose a visualization method:</label><select name="visMethod" id="visMethod"><option value="none">None</option><option value="points">Points</option><option value="cone">Cone</option><option value="collisionrays">Collision Rays</option><option value="allrays">All Rays</option><option value="both">All Rays And Cone</option></select>';
+
+      viewer[0].appendChild(dropdownContainer);
+
+      dropdown = document.getElementById("visMethod");
+
+      dropdown.onchange = function(){
+        if(currentEarthPosition != undefined){
+          createPoint(currentEarthPosition);
+        }
+      }
+
+      // Create angle slider
+      var angleSliderContainer = document.createElement('div');
+      angleSliderContainer.setAttribute("id", "angleSliderContainer");
+      angleSliderContainer.innerHTML = '<label>Viewshed Angle: </label><input type="range" min="1" max="89" value="39" class="slider" id="slider"><label id="sliderLabel">   39°</label>';
+
+      viewer[0].appendChild(angleSliderContainer);
+
+      slider = document.getElementById("slider");
+
+      sliderLabel = document.getElementById("sliderLabel");
+
+      slider.onchange = function() {
+        sliderLabel.innerHTML = "   " + this.value + "°";
+        if(currentEarthPosition != undefined){
+          createPoint(currentEarthPosition);
+        }
+      }
+
+
+      // Maxar labeling
+      var creditContainer = document.getElementsByClassName("cesium-widget-credits");
+
+      var maxarIconContainer = document.createElement('div');
+      maxarIconContainer.setAttribute("id", "maxarIconContainer");
+      maxarIconContainer.innerHTML ='<svg xmlns="http://www.w3.org/2000/svg" width="228" height="41" viewBox="0 0 228 41"><g data-name="Group 900"><path data-name="Path 512" d="M130 40.999h9v-9l-32-32h-9v9l11 12-11 11v9h9l11-11z" fill="#fdb913"/><g data-name="Group 899"><path data-name="Rectangle 1104" fill="#fdb913" d="M128-.001h11v11h-11z"/></g></g><path data-name="Path 513" d="M174 33l4 8h8v-9L172 1V0h-12v1l-15 31v9h9l4-8zm-8-22l5 13h-10z" fill="#fdb913"/><path data-name="Path 514" d="M79 33l4 8h9v-9L77 1V0H65v1L51 32v9h8l4-8zm-8-22l5 13H66z" fill="#fdb913"/><g data-name="Group 901" fill="#fdb913"><path data-name="Path 515" d="M207 25.999l13 15h7v-8l-7-8 1-1a10.792 10.792 0 004-3 12.494 12.494 0 003-8 13.41 13.41 0 00-5-10c-2.619-2.158-5.728-3-10-3h-20v41h10v-15zm-4-9v-8h11c2.034 0 3 1.966 3 4s-.966 4-3 4h-11z"/><path data-name="Path 516" d="M34 40.999h10v-41H33l-1 1-10 17-10-17-1-1H0v41h10v-21l8 13h8l8-13z"/></g></svg>';
+      creditContainer[0].appendChild(maxarIconContainer);
+    }
+
+    Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJiNzg2OGNiZS01Yzg0LTQyZjUtYWE2Yi0wOTYwOWI3NTc3NzUiLCJpZCI6MTAwNTk4LCJpYXQiOjE2NTczMjg3OTB9.frcogE73Ruqa-7w8AeW2tJ6SiLteKQZwcq7QzK_ckQ8';
+
+    // Initialize the Cesium Viewer in the HTML element with the `cesiumContainer` ID.
+    const viewer = new Cesium.Viewer('cesiumContainer', {
+      terrainProvider: Cesium.createWorldTerrain()
+    });
+    // Add Cesium OSM Buildings, a global 3D buildings layer.
+    const buildingTileset = viewer.scene.primitives.add(Cesium.createOsmBuildings());
+    
+    // Add Baton rouge tileset
+    const tileset = viewer.scene.primitives.add(
+        new Cesium.Cesium3DTileset({
+            url: Cesium.IonResource.fromAssetId(1192915),
+        })
+    );
+
+    // Add Seattle tileset
+    const tileset2 = viewer.scene.primitives.add(
+      new Cesium.Cesium3DTileset({
+        url: Cesium.IonResource.fromAssetId(1194461),
+      })
+    );
+
+    // Add panguitch tileset
+    const tileset3 = viewer.scene.primitives.add(
+      new Cesium.Cesium3DTileset({
+        url: Cesium.IonResource.fromAssetId(1195832),
+      })
+    );
+
+
+    // Add shiprock tileset
+    const tileset4 = viewer.scene.primitives.add(
+      new Cesium.Cesium3DTileset({
+        url: Cesium.IonResource.fromAssetId(1195833),
+      })
+    );
+
+
+    // Add sunny side tileset
+    const tileset5 = viewer.scene.primitives.add(
+      new Cesium.Cesium3DTileset({
+        url: Cesium.IonResource.fromAssetId(1195834),
+      })
+    );
+
+
+    const layers = viewer.imageryLayers;
+
+    //Redmond Parcels
+    layers.addImageryProvider(
+      new Cesium.ArcGisMapServerImageryProvider({
+        url: "https://partner.egis.maxar.com/server/rest/services/Redmon_Parcels_1984_Spatial_Reference/MapServer"
+      })
+    );
+
+    //Carbon Co Parcels
+    layers.addImageryProvider(
+      new Cesium.ArcGisMapServerImageryProvider({
+        url: "https://partner.egis.maxar.com/server/rest/services/CarbonCo_TaxParcels/MapServer"
+      })
+    );
+
+    //Garfield Co Parcels
+    layers.addImageryProvider(
+      new Cesium.ArcGisMapServerImageryProvider({
+        url: "https://partner.egis.maxar.com/server/rest/services/GarfieldCo_TaxParcels/MapServer"
+      })
+    );
+    const pinBuilder = new Cesium.PinBuilder();
+
+    const bluePin = viewer.entities.add({
+      name: "Blank blue pin",
+      billboard: {
+        image: pinBuilder.fromColor(Cesium.Color.ROYALBLUE, 48).toDataURL(),
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+      },
+    });
+    viewer.geocoder.viewModel.complete.addEventListener(function(event){
+
+      viewer.entities.removeAll();
+      const bluePin = viewer.entities.add({
+        name: "Blank blue pin",
+        billboard: {
+          image: pinBuilder.fromColor(Cesium.Color.ROYALBLUE, 48).toDataURL(),
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        },
+      });
+
+      const geocodeservice = new Cesium.IonGeocoderService({
+        scene: viewer.scene,
+        accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJiNzg2OGNiZS01Yzg0LTQyZjUtYWE2Yi0wOTYwOWI3NTc3NzUiLCJpZCI6MTAwNTk4LCJpYXQiOjE2NTczMjg3OTB9.frcogE73Ruqa-7w8AeW2tJ6SiLteKQZwcq7QzK_ckQ8"
+      });
+
+      geocodeservice.geocode(viewer.geocoder.viewModel.searchText).then(function(response){
+        console.log(response[0].destination);
+
+        bluePin.position = response[0].destination;
+
+      });
+
+    });
+
+    function GenerateSpherePoints(originX, originY, originZ){
+      // Amount of sphere points to generate
+      const amountOfSpherePoints = 5000;
+
+      // Angle in which to project points on the horizon
+      const horizonAngle = slider.value;
+
+      // Initialize empty 2d array to store sphere points
+      let pointTargets = [[]];
+
+      pointTargets.pop();
+
+      let sphereRadius = 1000;
+
+      let phi = Math.PI * (3 - Math.sqrt(5));
+
+      let originCartesian3 = new Cesium.Cartesian3(originX, originY, originZ);
+      let originInCartographic = Cesium.Cartographic.fromDegrees(originCartesian3.x, originCartesian3.y, originCartesian3.z);
+      let originToCartesianType = Cesium.Cartographic.toCartesian(originInCartographic);
+
+      // Loop to create evenly distributed points on a sphere
+      for(var i = 0; i < amountOfSpherePoints; i++){
+        let y = 1 - (i / (amountOfSpherePoints - 1)) * 2
+        let radius = Math.sqrt(1 - y * y)
+
+        let theta = phi * i;
+
+        let x = Math.cos(theta) * radius;
+        let z = Math.sin(theta) * radius;
+
+        let convertedX = originX + ((x * sphereRadius) / 111045);
+        let convertedY = originY + ((y * sphereRadius) / 111045);
+        let convertedZ = originZ + (z * sphereRadius);
+
+        let thisPointCartesian3 = new Cesium.Cartesian3(convertedX, convertedY, convertedZ);
+        let thisPointInCartographic = Cesium.Cartographic.fromDegrees(thisPointCartesian3.x, thisPointCartesian3.y, thisPointCartesian3.z);
+        let thisPointToCartesianType = Cesium.Cartographic.toCartesian(thisPointInCartographic);
+
+        let x1 = originToCartesianType.x;
+        let y1 = originToCartesianType.y;
+        let z1 = originToCartesianType.z;
+
+        let x2 = thisPointToCartesianType.x;
+        let y2 = thisPointToCartesianType.y;
+        let z2 = thisPointToCartesianType.z;
+
+        let dx = x2 - x1;
+        let dy = y2 - y1;
+        let dz = z2 - z1;
+
+        let distanceBetweenPoints = Math.sqrt((dx * dx) + (dy * dy) + (dz * dz));
+
+        let multipleDiff = (x1 * dx) + (y1 * dy) + (z1 * dz);
+
+        let squaredProduct = Math.sqrt(((x1 * x1) + (y1 * y1) + (z1 * z1)) * ((dx * dx) + (dy * dy) + (dz * dz)));
+
+        let mDiffDivBySqProd = multipleDiff / squaredProduct;
+        let acos = Math.acos(mDiffDivBySqProd);
+        let acosDegree = acos / Math.PI * 180;
+
+        let viewAngle = 90 - acosDegree;
+
+        if(viewAngle > horizonAngle && z >= 0){
+
+          // Angles are right but now make sure each point is appropriate distance from origin
+          let distanceBetweenPoints = Math.sqrt((dx * dx) + (dy * dy) + (dz * dz));
+
+          let extendMultiplier = sphereRadius / distanceBetweenPoints;
+
+          dx = dx * extendMultiplier;
+          dy = dy * extendMultiplier;
+          dz = dz * extendMultiplier;
+
+          newX = x1 + dx;
+          newY = y1 + dy;
+          newZ = z1 + dz;
+
+
+          // Create point based of xyz and origin point and radius and adjust xy by meter to 1 degree lat long
+          let thisPoint = [newX, newY, newZ];
+    
+          pointTargets.push(thisPoint);
+
+        }
+      }
+
+      return pointTargets;
+    }
+  
+
+
+
+    function createPoint(worldPosition) {
+        viewer.entities.removeAll();
+
+        //code before the pause
+        setTimeout(function(){
+              
+          var cartographic = Cesium.Cartographic.fromCartesian(worldPosition);
+
+          let cartographicDegrees = new Cesium.Cartesian3(cartographic.longitude / Math.PI * 180, cartographic.latitude / Math.PI * 180, cartographic.height);
+
+          let pointTargets = GenerateSpherePoints(cartographic.longitude / Math.PI * 180, cartographic.latitude / Math.PI * 180, cartographic.height);
+
+          var pointsObstructed = 0;
+
+          for(var i = 0; i < pointTargets.length; i++){
+            let thisPointCartesian3 = new Cesium.Cartesian3(pointTargets[i][0], pointTargets[i][1], pointTargets[i][2]);
+            let thisPointInCartographic = Cesium.Cartographic.fromDegrees(thisPointCartesian3.x, thisPointCartesian3.y, thisPointCartesian3.z);
+            let thisPointToCartesianType = Cesium.Cartographic.toCartesian(thisPointInCartographic);
+
+            let rayDirection = new Cesium.Cartesian3(thisPointCartesian3.x - worldPosition.x, thisPointCartesian3.y - worldPosition.y, thisPointCartesian3.z - worldPosition.z);
+            var ray = new Cesium.Ray(worldPosition, rayDirection);
+            var result = viewer.scene.pickFromRay(ray, viewer.entities.values);
+
+            if (result !== undefined) {
+              pointsObstructed += 1;
+
+
+              if(dropdown.value == "collisionrays" || dropdown.value == "allrays" || dropdown.value == "both"){
+                viewer.entities.add({
+                  polyline: {
+                      positions: [worldPosition, result.position],
+                      arcType: Cesium.ArcType.NONE,
+                      width: 30.0,
+                      material: new Cesium.PolylineGlowMaterialProperty({
+                        color: Cesium.Color.DEEPSKYBLUE,
+                        glowPower: 0.05,
+                      }),
+                      depthFailMaterial: new Cesium.PolylineGlowMaterialProperty({
+                        color: Cesium.Color.DEEPSKYBLUE,
+                        glowPower: 0.05,
+                      }),
+
+                  }
+                });
+                viewer.entities.add({
+                    polyline: {
+                        positions: [result.position, thisPointCartesian3],
+                        arcType: Cesium.ArcType.NONE,
+                        width: 3,
+                        material: new Cesium.PolylineOutlineMaterialProperty({
+                            color: Cesium.Color.RED,
+                            outlineWidth: 0
+                        }),
+                        depthFailMaterial: new Cesium.PolylineOutlineMaterialProperty({
+                            color: Cesium.Color.RED.withAlpha(0.5),
+                            outlineWidth: 0
+                        })
+
+                    }
+                });
+
+              } else if(dropdown.value == "points"){
+                  let pointColor = new Cesium.Color(1.0, 0.0, 0.0, 0.5);
+
+                  viewer.entities.add({
+                    position: result.position,
+                    point: {
+                      color: Cesium.Color.RED.withAlpha(0.5),
+                      pixelSize: 10,
+                      disableDepthTestDistance: Number.POSITIVE_INFINITY
+                    }
+                  });
+                }
+            } else {
+              if(dropdown.value == "allrays" || dropdown.value == "both"){
+                viewer.entities.add({
+                  polyline: {
+                      positions: [worldPosition, thisPointCartesian3],
+                      arcType: Cesium.ArcType.NONE,
+                      width: 30.0,
+                      material: new Cesium.PolylineGlowMaterialProperty({
+                        color: Cesium.Color.DEEPSKYBLUE,
+                        glowPower: 0.05,
+                      }),
+                      depthFailMaterial: new Cesium.PolylineGlowMaterialProperty({
+                        color: Cesium.Color.DEEPSKYBLUE,
+                        glowPower: 0.05,
+                      }),
+                  }
+                });
+              }
+            }
+          }
+
+          let percentageObstructed = (pointsObstructed / pointTargets.length) * 100;
+
+          let percentageNotObstructed = Math.floor(100 - percentageObstructed);
+
+          if(dropdown.value == "cone" || dropdown.value == "both"){
+
+            const horizonAngle = slider.value;
+
+            const halfInnerAngle = (180 - (horizonAngle * 2)) / 2;
+            
+            var topRadius = 1000 * Math.sin(halfInnerAngle * (Math.PI / 180));
+            var length = Math.sqrt((1000 * 1000) - (topRadius * topRadius));
+            //777.14596
+            var coneHeightOffset = (371.25 / 777.14596) * length;
+            var conePosition = Cesium.Cartesian3.fromRadians(cartographic.longitude, cartographic.latitude, cartographic.height + (length / 2));
+
+            // Cone angle calculator https://rechneronline.de/pi/cone.php
+            viewer.entities.add({
+              position: conePosition,
+              cylinder: {
+                hierarchy: new Cesium.PolygonHierarchy(
+                  Cesium.Cartesian3.fromDegreesArray([
+                    -118.0,
+                    30.0,
+                    -115.0,
+                    30.0,
+                    -117.1,
+                    31.1,
+                    -118.0,
+                    33.0,
+                  ])
+                ),
+                // length to topRadius ratio for 39 degrees is approx 0.8095~
+                length: length,
+                topRadius: topRadius,
+                bottomRadius: 0.0,
+                material: new Cesium.Color(1.0,0.0,0.0,0.2),
+              },
+            });
+          }
+
+          let pointColor = new Cesium.Color(Math.floor(percentageObstructed)/100, percentageNotObstructed/ 100, 0.0, 1.0);
+
+          //         viewer.entities.add({
+          //   name: url,
+          //   position: position,
+          //   orientation: orientation,
+          //   model: {
+          //     uri: url,
+          //     minimumPixelSize: 128,
+          //     maximumScale: 20000,
+          //   },
+          // });
+          const entity = viewer.entities.add({
+            position: worldPosition,
+            model: {
+              uri: "./satteliteDish.glb",
+              minimumPixelSize: 0,
+              maximumScale: 50,
+              color: pointColor
+            },
+            label: {
+            text: percentageNotObstructed + "%",
+            font: "15px sans-serif",
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            showBackground: true,
+            pixelOffset: new Cesium.Cartesian3(0.0, 10.0, 0.0),
+            pixelOffsetScaleByDistance: new Cesium.NearFarScalar(
+              1.5e2,
+              3.0,
+              1.5e7,
+              0.5
+            ),
+            }
+
+          });
+        }, 250);
+
+    }
+    
+    const handler = new Cesium.ScreenSpaceEventHandler(viewer.canvas);
+    handler.setInputAction(function (event) {
+      
+      for(var i = 0; i < layers._layers.length; i++){
+        const thisFeatureInfo = layers._layers[i].imageryProvider.pickFeatures(event.position);
+        console.log(thisFeatureInfo);
+      }
+
+      const earthPosition = viewer.scene.pickPosition(event.position);
+
+
+
+      var cartographic = Cesium.Cartographic.fromCartesian(earthPosition);
+
+      const oldPopupDiv = document.getElementById("popupDiv");
+      
+      if(oldPopupDiv != undefined){
+        oldPopupDiv.remove();
+      }
+
+      $.get("https://partner.egis.maxar.com/server/rest/services/Redmon_Parcels_1984_Spatial_Reference/MapServer/0/query?f=json&outfields=*&geometry=" + (cartographic.longitude  / Math.PI * 180) + "," + (cartographic.latitude / Math.PI * 180) + "&geometryType=esriGeometryPoint&distance=10&units=esriSRUnit_Meter", function(data, status){
+        
+        if(data.features.length > 0){
+          const popUpDiv = document.createElement("div");
+          popUpDiv.id = "popupDiv";
+          popUpDiv.classList.add("cesium-infoBox");
+          popUpDiv.innerText = "Jurisdiction: " + data.features[0].attributes.d_Jurisdic + "\n" +
+          "Subdivision: " + data.features[0].attributes.Subdivisio + "\n" +
+          "Lot: " + data.features[0].attributes.LotOrTract + "\n" +
+          "Comments: " + data.features[0].attributes.Comments;
+          document.getElementById("cesiumContainer").appendChild(popUpDiv);
+        }
+      });
+      
+      // $.get("https://partner.egis.maxar.com/server/rest/services/CarbonCo_TaxParcels/MapServer/4/query?f=json&outfields=*&geometry=" + cartographic.longitude + "," + cartographic.latitude + "&geometryType=esriGeometryPoint&distance=100&units=esriSRUnit_Meter", function(data, status){
+      //   alert("Data: " + data + "\nStatus: " + status);
+      // });
+
+      
+      // $.get("https://partner.egis.maxar.com/server/rest/services/GarfieldCo_TaxParcels/MapServer/5/query?f=json&outfields=*&geometry=" + cartographic.longitude + "," + cartographic.latitude + "&geometryType=esriGeometryPoint&distance=100&units=esriSRUnit_Meter", function(data, status){
+      //   alert("Data: " + data + "\nStatus: " + status);
+      // });
+
+      //https://partner.egis.maxar.com/server/rest/services/Redmon_Parcels_1984_Spatial_Reference/MapServer/0/query?f=json&outfields=*&geometry=6560874.3,1863451.1&geometryType=esriGeometryPoint&distance=10000000&units=esriSRUnit_Meter
+
+      // `earthPosition` will be undefined if our mouse is not over the globe.
+      if (Cesium.defined(earthPosition)) {
+          currentEarthPosition = earthPosition;
+          createPoint(earthPosition);
+      }
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+    // Fly the camera to MAXAR HQ at the given longitude, latitude, and height.
+    viewer.camera.flyTo({
+      destination : Cesium.Cartesian3.fromDegrees(-105.0018607, 39.921769, 1900),
+      orientation : {
+        heading : Cesium.Math.toRadians(182),
+        pitch : Cesium.Math.toRadians(-15.0),
+      }
+    });
+  </script>
+ </div>
+</body>
+</html>
