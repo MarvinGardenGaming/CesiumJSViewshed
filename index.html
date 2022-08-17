@@ -225,7 +225,15 @@
       geocodeservice.geocode(viewer.geocoder.viewModel.searchText).then(function(response){
         console.log(response[0].destination);
 
-        bluePin.position = response[0].destination;
+        let rayDirection = new Cesium.Cartesian3(response[0].destination.x - viewer.camera.position.x, response[0].destination.y - viewer.camera.position.y, response[0].destination.z - viewer.camera.position.z);
+        var ray = new Cesium.Ray(viewer.camera.position, rayDirection);
+        var result = viewer.scene.pickFromRay(ray, viewer.entities.values);
+
+        if(result != null){
+          bluePin.position = result.position;
+        } else {
+          bluePin.position = response[0].destination;
+        }
 
       });
 
